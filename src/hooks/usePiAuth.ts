@@ -12,24 +12,49 @@ interface AuthState {
   isLoading: boolean;
 }
 
-// Simulated Pi SDK for demo purposes
-const mockPiAuth = {
-  authenticate: async (): Promise<PiUser> => {
-    // Simulate Pi SDK authentication
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockUser: PiUser = {
-          uid: `pi_${Math.random().toString(36).substring(7)}`,
-          username: `piuser_${Math.random().toString(36).substring(7)}`,
-          accessToken: `token_${Math.random().toString(36).substring(7)}`
+// Real Pi SDK integration
+declare global {
+  interface Window {
+    Pi: {
+      authenticate: (scopes: string[], onIncompletePaymentFound: (payment: any) => void) => Promise<{
+        accessToken: string;
+        user: {
+          uid: string;
+          username: string;
         };
-        resolve(mockUser);
-      }, 1000);
-    });
+      }>;
+      createPayment: (paymentData: any, callbacks: any) => void;
+      openShareDialog: (title: string, message: string) => void;
+    };
+  }
+}
+
+const piAuth = {
+  authenticate: async (): Promise<PiUser> => {
+    if (!window.Pi) {
+      throw new Error('Pi SDK not loaded. Please open this app in Pi Browser.');
+    }
+
+    try {
+      const auth = await window.Pi.authenticate(['payments', 'username'], (payment) => {
+        // Handle incomplete payment if any
+        console.log('Incomplete payment found:', payment);
+      });
+
+      return {
+        uid: auth.user.uid,
+        username: auth.user.username,
+        accessToken: auth.accessToken
+      };
+    } catch (error) {
+      console.error('Pi authentication failed:', error);
+      throw error;
+    }
   },
   
   signOut: async (): Promise<void> => {
     localStorage.removeItem('piUser');
+    // Pi SDK doesn't have explicit signOut, we just clear local storage
   }
 };
 
@@ -71,7 +96,7 @@ export const usePiAuth = () => {
   const signIn = async () => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
-      const user = await mockPiAuth.authenticate();
+      const user = await piAuth.authenticate();
       localStorage.setItem('piUser', JSON.stringify(user));
       setAuthState({
         user,
@@ -91,7 +116,7 @@ export const usePiAuth = () => {
   };
 
   const signOut = async () => {
-    await mockPiAuth.signOut();
+    await piAuth.signOut();
     setAuthState({
       user: null,
       isAuthenticated: false,
